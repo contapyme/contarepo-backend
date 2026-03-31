@@ -1,0 +1,9 @@
+# Desarrollo local — hot-reload
+services:
+  contarepo-backend:
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+      EXTRA_CORS_ORIGINS: ${EXTRA_CORS_ORIGINS:-http://192.168.1.7:5174}

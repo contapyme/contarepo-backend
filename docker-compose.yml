@@ -1,0 +1,13 @@
+services:
+  contarepo-backend:
+    build: .
+    environment:
+      # Misma BD que contapyme-backend (solo lectura en la práctica)
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://cp:password@172.20.0.1:5432/contapyme}
+      # Debe ser el mismo SECRET_KEY que contapyme-backend para validar los mismos tokens
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+      EXTRA_CORS_ORIGINS: ${EXTRA_CORS_ORIGINS:-}
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
