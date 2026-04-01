@@ -12,6 +12,9 @@ from app.services.reports.income_statement import generate_income_statement
 from app.services.reports.form_710 import generate_form_710, generate_form_710_txt
 from app.services.reports.ledger_service import get_trial_balance, get_libro_mayor
 from app.services.reports.igv_summary import generate_igv_summary
+from app.services.reports.libro_diario import get_libro_diario
+from app.services.reports.registro_ventas import get_registro_ventas
+from app.services.reports.registro_compras import get_registro_compras
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -106,6 +109,36 @@ async def libro_mayor(
         "normal_balance": account.normal_balance,
         "movements": lines,
     }
+
+
+@router.get("/libro-diario")
+async def libro_diario(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    ctx: CompanyContext = Depends(get_active_company),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_libro_diario(db, ctx.company_id, year, month)
+
+
+@router.get("/registro-ventas")
+async def registro_ventas(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    ctx: CompanyContext = Depends(get_active_company),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_registro_ventas(db, ctx.company_id, year, month)
+
+
+@router.get("/registro-compras")
+async def registro_compras(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    ctx: CompanyContext = Depends(get_active_company),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_registro_compras(db, ctx.company_id, year, month)
 
 
 # ── Balance Cache ──────────────────────────────────────────────────────────────
