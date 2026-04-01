@@ -1,30 +1,108 @@
 import uuid
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text, or_, and_
+from sqlalchemy import select, func, or_, and_
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.account import Account
 from app.models.fiscal_period import FiscalPeriod
+from app.models.balance_cache import PeriodBalance, BalanceCacheStatus
 from app.schemas.reports import AccountBalance, TrialBalanceLine, TrialBalanceReport
 
 
-async def get_account_balances(
+def _to_account_balances(rows, normal_balance_map: dict) -> list[AccountBalance]:
+    result = []
+    for row in rows:
+        normal_balance = normal_balance_map.get(str(row.account_id), "D")
+        debit = Decimal(str(row.total_debit))
+        credit = Decimal(str(row.total_credit))
+        balance = debit - credit if normal_balance == "D" else credit - debit
+        result.append(AccountBalance(
+            code=row.code,
+            name=row.name,
+            normal_balance=normal_balance,
+            debit=debit,
+            credit=credit,
+            balance=balance,
+        ))
+    return result
+
+
+async def _cache_is_valid(db: AsyncSession, company_id: uuid.UUID) -> bool:
+    r = await db.execute(
+        select(BalanceCacheStatus).where(BalanceCacheStatus.company_id == company_id)
+    )
+    status = r.scalar_one_or_none()
+    return status is not None and not status.is_dirty
+
+
+async def _balances_from_cache(
     db: AsyncSession,
     company_id: uuid.UUID,
     year: int,
-    month: int | None = None,
-    year_only: bool = False,
-    exclude_closing: bool = False,
+    month: int | None,
+    year_only: bool,
 ) -> list[AccountBalance]:
-    """Get debit/credit/balance for all accounts up to given year/month.
+    """Lee saldos desde period_balances (cache limpio)."""
+    if year_only:
+        period_cond = and_(PeriodBalance.year == year,
+                           PeriodBalance.month <= (month or 12))
+    elif month:
+        period_cond = or_(
+            PeriodBalance.year < year,
+            and_(PeriodBalance.year == year, PeriodBalance.month <= month),
+        )
+    else:
+        period_cond = PeriodBalance.year <= year
 
-    year_only=False (default): cumulative desde el inicio de la empresa.
-        Correcto para Balance General y Balance de Comprobación.
+    agg = (
+        select(
+            PeriodBalance.account_id,
+            func.sum(PeriodBalance.total_debit).label("total_debit"),
+            func.sum(PeriodBalance.total_credit).label("total_credit"),
+        )
+        .where(PeriodBalance.company_id == company_id, period_cond)
+        .group_by(PeriodBalance.account_id)
+        .subquery()
+    )
 
-    year_only=True: solo períodos del año indicado.
-        Correcto para Estado de Resultados (cuentas 6x-7x se reinician cada año).
-    """
-    # Build period ID subquery with proper scope
+    q = (
+        select(
+            Account.id,
+            Account.code,
+            Account.name,
+            Account.normal_balance,
+            func.coalesce(agg.c.total_debit, 0).label("total_debit"),
+            func.coalesce(agg.c.total_credit, 0).label("total_credit"),
+        )
+        .select_from(Account)
+        .outerjoin(agg, agg.c.account_id == Account.id)
+        .where(Account.company_id == company_id, Account.is_active == True)
+        .order_by(Account.code)
+    )
+
+    rows = (await db.execute(q)).all()
+    result = []
+    for row in rows:
+        normal_balance = row.normal_balance or "D"
+        debit = Decimal(str(row.total_debit))
+        credit = Decimal(str(row.total_credit))
+        balance = debit - credit if normal_balance == "D" else credit - debit
+        result.append(AccountBalance(
+            code=row.code, name=row.name, normal_balance=normal_balance,
+            debit=debit, credit=credit, balance=balance,
+        ))
+    return result
+
+
+async def _balances_from_entries(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    year: int,
+    month: int | None,
+    year_only: bool,
+    exclude_closing: bool,
+) -> list[AccountBalance]:
+    """Calcula saldos directamente desde journal_entry_lines."""
     base = select(FiscalPeriod.id).where(FiscalPeriod.company_id == company_id)
 
     if year_only:
@@ -42,9 +120,6 @@ async def get_account_balances(
         else:
             period_filter = base.where(FiscalPeriod.year <= year)
 
-    # Subquery: pre-aggregate only the lines that belong to the filtered periods.
-    # Using LEFT JOIN on Account ensures accounts with no movements still appear.
-    # The INNER JOIN inside the subquery ensures only period-scoped lines are summed.
     je_filter = (
         (JournalEntry.id == JournalEntryLine.journal_entry_id)
         & (JournalEntry.status == "POSTED")
@@ -81,19 +156,39 @@ async def get_account_balances(
     rows = (await db.execute(q)).all()
     result = []
     for row in rows:
-        normal_balance = row.normal_balance or "D"  # fallback for malformed accounts
+        normal_balance = row.normal_balance or "D"
         debit = Decimal(str(row.total_debit))
         credit = Decimal(str(row.total_credit))
         balance = debit - credit if normal_balance == "D" else credit - debit
         result.append(AccountBalance(
-            code=row.code,
-            name=row.name,
-            normal_balance=normal_balance,
-            debit=debit,
-            credit=credit,
-            balance=balance,
+            code=row.code, name=row.name, normal_balance=normal_balance,
+            debit=debit, credit=credit, balance=balance,
         ))
     return result
+
+
+async def get_account_balances(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    year: int,
+    month: int | None = None,
+    year_only: bool = False,
+    exclude_closing: bool = False,
+) -> list[AccountBalance]:
+    """Get debit/credit/balance for all accounts up to given year/month.
+
+    year_only=False (default): cumulative desde el inicio de la empresa.
+        Correcto para Balance General y Balance de Comprobación.
+
+    year_only=True: solo períodos del año indicado.
+        Correcto para Estado de Resultados (cuentas 6x-7x se reinician cada año).
+
+    Usa el cache (period_balances) cuando está limpio, excepto cuando
+    exclude_closing=True, ya que el cache incluye asientos de cierre.
+    """
+    if not exclude_closing and await _cache_is_valid(db, company_id):
+        return await _balances_from_cache(db, company_id, year, month, year_only)
+    return await _balances_from_entries(db, company_id, year, month, year_only, exclude_closing)
 
 
 async def get_trial_balance(
