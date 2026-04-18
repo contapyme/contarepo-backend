@@ -6,6 +6,7 @@ from app.db.base import Base
 from app.db.session import engine
 from app.routers import reports
 import app.models.balance_cache  # noqa: F401
+import app.models.contact  # noqa: F401 - read-only, owned by contapyme
 
 
 @asynccontextmanager

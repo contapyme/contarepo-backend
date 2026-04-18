@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,11 +11,13 @@ from app.schemas.reports import BalanceSheetReport, IncomeStatementReport, Form7
 from app.services.reports.balance_sheet import generate_balance_sheet
 from app.services.reports.income_statement import generate_income_statement
 from app.services.reports.form_710 import generate_form_710, generate_form_710_txt
-from app.services.reports.ledger_service import get_trial_balance, get_libro_mayor
+from app.services.reports.ledger_service import get_trial_balance, get_libro_mayor, get_libro_mayor_rango
 from app.services.reports.igv_summary import generate_igv_summary
 from app.services.reports.libro_diario import get_libro_diario
 from app.services.reports.registro_ventas import get_registro_ventas
 from app.services.reports.registro_compras import get_registro_compras
+from app.services.reports.tendencia_mensual import get_tendencia_mensual
+from app.services.reports.cuentas_bancarias import get_cuentas_bancarias
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -95,11 +98,12 @@ async def igv_summary(
 async def libro_mayor(
     account_id: uuid.UUID = Query(...),
     year: int = Query(...),
-    month: int = Query(..., ge=1, le=12),
+    month: int | None = Query(None, ge=1, le=12),
+    all_years: bool = Query(False),
     ctx: CompanyContext = Depends(get_active_company),
     db: AsyncSession = Depends(get_db),
 ):
-    account, lines = await get_libro_mayor(db, ctx.company_id, account_id, year, month)
+    account, lines = await get_libro_mayor(db, ctx.company_id, account_id, year, month, all_years)
     if not account:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
@@ -111,20 +115,34 @@ async def libro_mayor(
     }
 
 
-@router.get("/libro-diario")
-async def libro_diario(
+@router.get("/libro-mayor-rango")
+async def libro_mayor_rango(
+    code_from: str = Query(...),
+    code_to: str = Query(...),
     year: int = Query(...),
-    month: int = Query(..., ge=1, le=12),
+    month: int | None = Query(None, ge=1, le=12),
+    all_years: bool = Query(False),
     ctx: CompanyContext = Depends(get_active_company),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_libro_diario(db, ctx.company_id, year, month)
+    return await get_libro_mayor_rango(db, ctx.company_id, code_from, code_to, year, month, all_years)
+
+
+@router.get("/libro-diario")
+async def libro_diario(
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    ctx: CompanyContext = Depends(get_active_company),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_libro_diario(db, ctx.company_id, from_date, to_date, limit)
 
 
 @router.get("/registro-ventas")
 async def registro_ventas(
-    year: int = Query(...),
-    month: int = Query(..., ge=1, le=12),
+    year: int | None = Query(None),
+    month: int | None = Query(None, ge=1, le=12),
     ctx: CompanyContext = Depends(get_active_company),
     db: AsyncSession = Depends(get_db),
 ):
@@ -133,12 +151,31 @@ async def registro_ventas(
 
 @router.get("/registro-compras")
 async def registro_compras(
-    year: int = Query(...),
-    month: int = Query(..., ge=1, le=12),
+    year: int | None = Query(None),
+    month: int | None = Query(None, ge=1, le=12),
     ctx: CompanyContext = Depends(get_active_company),
     db: AsyncSession = Depends(get_db),
 ):
     return await get_registro_compras(db, ctx.company_id, year, month)
+
+
+@router.get("/tendencia-mensual")
+async def tendencia_mensual(
+    year: int = Query(...),
+    ctx: CompanyContext = Depends(get_active_company),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_tendencia_mensual(db, ctx.company_id, year)
+
+
+@router.get("/cuentas-bancarias")
+async def cuentas_bancarias(
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    ctx: CompanyContext = Depends(get_active_company),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_cuentas_bancarias(db, ctx.company_id, from_date, to_date)
 
 
 # ── Balance Cache ──────────────────────────────────────────────────────────────

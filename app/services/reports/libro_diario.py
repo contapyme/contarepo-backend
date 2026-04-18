@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -10,27 +11,31 @@ from app.models.account import Account
 async def get_libro_diario(
     db: AsyncSession,
     company_id: uuid.UUID,
-    year: int,
-    month: int,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    limit: int = 100,
 ):
-    period_filter = select(FiscalPeriod.id).where(
-        FiscalPeriod.company_id == company_id,
-        FiscalPeriod.year == year,
-        FiscalPeriod.month == month,
-    )
-
     q = (
         select(JournalEntry)
         .options(selectinload(JournalEntry.lines).selectinload(JournalEntryLine.account))
         .where(
             JournalEntry.company_id == company_id,
             JournalEntry.status == "POSTED",
-            JournalEntry.fiscal_period_id.in_(period_filter),
         )
-        .order_by(JournalEntry.entry_date, JournalEntry.entry_number)
+        .order_by(JournalEntry.entry_date.desc(), JournalEntry.entry_number.desc())
     )
 
+    if from_date:
+        q = q.where(JournalEntry.entry_date >= from_date)
+    if to_date:
+        q = q.where(JournalEntry.entry_date <= to_date)
+
+    if limit:
+        q = q.limit(limit)
+
     entries = (await db.execute(q)).scalars().all()
+    # Return in chronological order
+    entries = list(reversed(entries))
 
     result = []
     for e in entries:

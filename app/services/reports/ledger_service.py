@@ -233,15 +233,22 @@ async def get_libro_mayor(
     company_id: uuid.UUID,
     account_id: uuid.UUID,
     year: int,
-    month: int,
+    month: int | None = None,
+    all_years: bool = False,
 ):
-    """Get all posted journal entry lines for an account with running balance."""
+    """Get all posted journal entry lines for an account.
+    all_years=True ignores year filter and returns all history.
+    month=None means full year.
+    """
     from sqlalchemy.orm import selectinload
-    period_filter = select(FiscalPeriod.id).where(
+    period_q = select(FiscalPeriod.id).where(
         FiscalPeriod.company_id == company_id,
-        FiscalPeriod.year == year,
-        FiscalPeriod.month <= month,
     )
+    if not all_years:
+        period_q = period_q.where(FiscalPeriod.year == year)
+        if month:
+            period_q = period_q.where(FiscalPeriod.month == month)
+    period_filter = period_q
 
     r = await db.execute(select(Account).where(Account.id == account_id, Account.company_id == company_id))
     account = r.scalar_one_or_none()
@@ -278,3 +285,81 @@ async def get_libro_mayor(
         })
 
     return account, lines
+
+
+async def get_libro_mayor_rango(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    code_from: str,
+    code_to: str,
+    year: int,
+    month: int | None = None,
+    all_years: bool = False,
+) -> list[dict]:
+    """Get movements for all accounts whose code falls in [code_from, code_to]."""
+    period_q = select(FiscalPeriod.id).where(
+        FiscalPeriod.company_id == company_id,
+    )
+    if not all_years:
+        period_q = period_q.where(FiscalPeriod.year == year)
+        if month:
+            period_q = period_q.where(FiscalPeriod.month == month)
+    period_filter = period_q
+
+    # Fetch matching accounts ordered by code
+    accts_q = (
+        select(Account)
+        .where(
+            Account.company_id == company_id,
+            Account.is_active == True,
+            Account.code >= code_from,
+            Account.code <= code_to,
+        )
+        .order_by(Account.code)
+    )
+    accounts = (await db.execute(accts_q)).scalars().all()
+
+    result = []
+    for account in accounts:
+        q = (
+            select(JournalEntryLine, JournalEntry.entry_date, JournalEntry.entry_number, JournalEntry.description)
+            .join(JournalEntry, JournalEntry.id == JournalEntryLine.journal_entry_id)
+            .where(
+                JournalEntryLine.account_id == account.id,
+                JournalEntry.status == "POSTED",
+                JournalEntry.fiscal_period_id.in_(period_filter),
+            )
+            .order_by(JournalEntry.entry_date, JournalEntry.entry_number)
+        )
+        rows = (await db.execute(q)).all()
+        if not rows:
+            continue
+
+        running = Decimal("0")
+        lines = []
+        for line, entry_date, entry_number, entry_desc in rows:
+            if account.normal_balance == "D":
+                running += line.debit - line.credit
+            else:
+                running += line.credit - line.debit
+            lines.append({
+                "entry_number": entry_number,
+                "entry_date": entry_date,
+                "entry_description": entry_desc,
+                "line_description": line.description,
+                "debit": float(line.debit),
+                "credit": float(line.credit),
+                "balance": float(running),
+            })
+
+        result.append({
+            "account_code": account.code,
+            "account_name": account.name,
+            "normal_balance": account.normal_balance,
+            "movements": lines,
+            "total_debit": float(sum(Decimal(str(l["debit"])) for l in lines)),
+            "total_credit": float(sum(Decimal(str(l["credit"])) for l in lines)),
+            "final_balance": float(running),
+        })
+
+    return result
