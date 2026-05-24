@@ -5,9 +5,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATABASE_URL: str = "postgresql+asyncpg://cp:password@localhost:5432/contapyme"
-    # Debe coincidir con el SECRET_KEY de contapyme-backend para validar los mismos tokens
-    SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
-    ALGORITHM: str = "HS256"
+    ALGORITHM: str = "RS256"
+    PUBLIC_KEY_PATH: str = "keys/public.pem"
     FRONTEND_URL: str = "http://localhost:5174"
     EXTRA_CORS_ORIGINS: str = ""
 

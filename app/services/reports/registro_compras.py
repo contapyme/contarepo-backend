@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.fiscal_period import FiscalPeriod
@@ -50,6 +50,19 @@ async def get_registro_compras(
 
     entries = (await db.execute(q)).scalars().all()
 
+    # Check which entries have a corresponding OpeVoucher (registered via ContaOPE)
+    ope_map: dict[uuid.UUID, uuid.UUID] = {}
+    if entries:
+        entry_ids = [e.id for e in entries]
+        ope_result = await db.execute(
+            text(
+                "SELECT journal_entry_id, id FROM ope_vouchers "
+                "WHERE journal_entry_id = ANY(:ids)"
+            ),
+            {"ids": entry_ids},
+        )
+        ope_map = {row[0]: row[1] for row in ope_result.fetchall()}
+
     rows = []
     for e in entries:
         base_imponible = 0.0
@@ -58,12 +71,18 @@ async def get_registro_compras(
 
         for l in e.lines:
             code = l.account.code if l.account else ""
-            if code.startswith("4012"):
+            if code.startswith("4011") or code.startswith("4012"):
                 igv += float(l.debit) - float(l.credit)
             elif code.startswith("6"):
                 base_imponible += float(l.debit) - float(l.credit)
 
-        total = base_imponible + igv
+        # Si el asiento no tiene IGV, el gasto es una operación NO gravada
+        # (RH 4ta categoría, gastos financieros, etc.) — va a la columna correcta.
+        if igv == 0 and base_imponible > 0:
+            op_no_gravada = base_imponible
+            base_imponible = 0.0
+
+        total = base_imponible + igv + op_no_gravada
 
         # Obtener proveedor: primero contact_id, luego fallback a aux_name
         proveedor_doc = ""
@@ -80,6 +99,7 @@ async def get_registro_compras(
                 if l.aux_type:
                     proveedor_doc = l.aux_type
 
+        ope_voucher_id = ope_map.get(e.id)
         rows.append({
             "entry_number": e.entry_number,
             "entry_date": e.entry_date,
@@ -91,6 +111,8 @@ async def get_registro_compras(
             "igv": round(igv, 2),
             "op_no_gravada": round(op_no_gravada, 2),
             "total": round(total, 2),
+            "has_ope_voucher": ope_voucher_id is not None,
+            "ope_voucher_id": str(ope_voucher_id) if ope_voucher_id else None,
         })
 
     return rows

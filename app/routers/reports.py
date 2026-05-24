@@ -18,6 +18,7 @@ from app.services.reports.registro_ventas import get_registro_ventas
 from app.services.reports.registro_compras import get_registro_compras
 from app.services.reports.tendencia_mensual import get_tendencia_mensual
 from app.services.reports.cuentas_bancarias import get_cuentas_bancarias
+from app.services.reports.obligaciones_tributarias import get_obligaciones_tributarias
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -166,6 +167,15 @@ async def tendencia_mensual(
     db: AsyncSession = Depends(get_db),
 ):
     return await get_tendencia_mensual(db, ctx.company_id, year)
+
+
+@router.get("/obligaciones-tributarias")
+async def obligaciones_tributarias(
+    year: int = Query(...),
+    ctx: CompanyContext = Depends(get_active_company),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_obligaciones_tributarias(db, ctx.company_id, year)
 
 
 @router.get("/cuentas-bancarias")
