@@ -1,9 +1,38 @@
+# Entorno
+.env
+.env.local
+.env.azure
+.env.production
+.env.*.local
+
+# Python
 __pycache__/
 *.py[cod]
-.env
-*.db
+*.pyc
+*.pyo
 .venv/
 venv/
+env/
 dist/
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Base de datos local
+*.db
+*.sqlite3
+
+# Claves / certificados
 keys/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# IDE
+.vscode/
+.idea/
+*.swp
