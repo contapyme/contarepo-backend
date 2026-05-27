@@ -8,7 +8,18 @@ _public_key: str | None = None
 def _get_public_key() -> str:
     global _public_key
     if _public_key is None:
-        _public_key = Path(settings.PUBLIC_KEY_PATH).read_text()
+        if settings.RSA_PUBLIC_KEY:
+            _public_key = settings.RSA_PUBLIC_KEY.replace("\\n", "\n")
+        else:
+            path = Path(settings.PUBLIC_KEY_PATH)
+            if not path.exists():
+                raise RuntimeError(
+                    "Llave pública RSA no encontrada. "
+                    "En producción: configura RSA_PUBLIC_KEY en las variables de entorno. "
+                    "En desarrollo: genera las llaves con: openssl genrsa -out keys/private.pem 2048 && "
+                    "openssl rsa -in keys/private.pem -pubout -out keys/public.pem"
+                )
+            _public_key = path.read_text()
     return _public_key
 
 

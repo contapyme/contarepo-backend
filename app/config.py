@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://cp:password@localhost:5432/contapyme"
     ALGORITHM: str = "RS256"
     PUBLIC_KEY_PATH: str = "keys/public.pem"
+    # Contenido de la llave pública RSA (para producción via env vars)
+    RSA_PUBLIC_KEY: str = ""
     FRONTEND_URL: str = "http://localhost:5174"
     EXTRA_CORS_ORIGINS: str = ""
 
