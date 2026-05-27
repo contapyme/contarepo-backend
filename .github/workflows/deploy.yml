@@ -50,7 +50,7 @@ jobs:
               --resource-group rsg-contapyme \
               --container-image-name ghcr.io/contapyme/contarepo-backend:latest \
               --container-registry-url https://ghcr.io \
-              --container-registry-user ${{ github.repository_owner }} \
+              --container-registry-user rodrigopizarro-sc \
               --container-registry-password ${{ secrets.GHCR_PAT }}
 
       - name: Restart App Service
