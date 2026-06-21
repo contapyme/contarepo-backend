@@ -1,6 +1,5 @@
 # Caller workflow — contapyme/contarepo-backend
 # Dispara el reusable workflow de OWASP ZAP con la config específica de este proyecto.
-# NOTA: ContaREPO es un servicio interno sin autenticación propia → auth_type: none
 name: OWASP ZAP Security Scan
 
 on:
@@ -20,15 +19,18 @@ jobs:
 
       # App config — puerto 8000 según Dockerfile
       port: 8000
-      install_command: pip install -e .
+      # Genera claves RSA efímeras para CI (keys/ está en .gitignore)
+      install_command: pip install -e . && mkdir -p keys && openssl genrsa -out keys/private.pem 2048 2>/dev/null && openssl rsa -in keys/private.pem -pubout -out keys/public.pem 2>/dev/null
       start_command: uvicorn app.main:app --host 0.0.0.0 --port 8000
       health_check_path: /health
 
-      # Sin seed ni auth: servicio interno que no tiene router de login
-      auth_type: none
+      # Seed: crea tablas + usuario admin + imprime TOKEN=<jwt> (capturado por auth_type: seed)
+      seed_command: python ci_seed.py
+
+      # auth_type: seed — ci_seed.py genera el JWT con la clave RSA efímera
+      auth_type: seed
 
       target: ${{ inputs.target }}
 
     secrets:
       CHECKOUT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # ZAP_USER / ZAP_PASSWORD no se pasan — auth_type: none no los usa
