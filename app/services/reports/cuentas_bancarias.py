@@ -2,9 +2,9 @@ import uuid
 from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models.bank_account import BankAccount
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.account import Account
+from app.services import contabanc_client
 
 
 async def get_cuentas_bancarias(
@@ -17,13 +17,9 @@ async def get_cuentas_bancarias(
     Reporte de cuentas bancarias: lista de bancos con saldo inicial,
     movimientos del período y saldo final.
     """
-    # 1. Obtener todas las cuentas bancarias de la empresa
-    banks_q = (
-        select(BankAccount)
-        .where(BankAccount.company_id == company_id, BankAccount.is_active == True)
-        .order_by(BankAccount.bank_name)
-    )
-    banks = (await db.execute(banks_q)).scalars().all()
+    # 1. Obtener todas las cuentas bancarias de la empresa (vía contabanc — ya
+    # no vive en esta BD desde la separación del dominio Banca)
+    banks = await contabanc_client.get_bank_accounts_for_company(company_id)
 
     result = []
 
