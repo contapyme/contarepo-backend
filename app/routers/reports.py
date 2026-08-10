@@ -1,12 +1,12 @@
 import uuid
+import httpx
 from datetime import date
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from app.config import settings
 from app.db.session import get_db
 from app.dependencies import get_active_company, CompanyContext
-from app.models.company import Company
 from app.schemas.reports import BalanceSheetReport, IncomeStatementReport, Form710Report, TrialBalanceReport
 from app.services.reports.balance_sheet import generate_balance_sheet
 from app.services.reports.income_statement import generate_income_statement
@@ -23,9 +23,30 @@ from app.services.reports.obligaciones_tributarias import get_obligaciones_tribu
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
-async def _get_company(ctx: CompanyContext, db: AsyncSession) -> Company:
-    result = await db.execute(select(Company).where(Company.id == ctx.company_id))
-    return result.scalar_one()
+class _CompanyInfo:
+    def __init__(self, razon_social: str, ruc: str, moneda: str):
+        self.razon_social = razon_social
+        self.ruc = ruc
+        self.moneda = moneda
+
+
+async def _get_company(ctx: CompanyContext, db: AsyncSession) -> _CompanyInfo:
+    """Resuelve razón social/RUC/moneda vía contasist-backend (dueño de
+    companies desde la separación del dominio Usuarios/Seguridad). `db` se
+    mantiene en la firma para no tocar las llamadas existentes, aunque ya
+    no se usa acá."""
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            resp = await client.get(
+                f"{settings.CONTASIST_URL}/api/v1/internal/company/{ctx.company_id}",
+                headers={"X-Internal-Key": settings.INTERNAL_API_KEY},
+            )
+        except httpx.RequestError:
+            raise HTTPException(status_code=503, detail="No se pudo resolver la empresa (contasist no disponible)")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=503, detail="Error resolviendo la empresa")
+    data = resp.json()
+    return _CompanyInfo(razon_social=data["razon_social"], ruc=data["ruc"], moneda=data["moneda"])
 
 
 @router.get("/balance-sheet", response_model=BalanceSheetReport)
