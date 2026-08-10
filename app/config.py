@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     # URL del backend de contabanc (dominio Banca) — bank_accounts ya no vive
     # en esta misma BD desde la separación del dominio Banca (Fase 5)
     CONTABANC_URL: str = "http://localhost:8004"
-    # Debe ser el mismo valor que INTERNAL_API_KEY en contabanc-backend
+    # URL del backend de contasist (dominio Usuarios/Seguridad)
+    CONTASIST_URL: str = "http://localhost:8006"
+    # Debe ser el mismo valor que INTERNAL_API_KEY en contabanc-backend/contasist-backend
     INTERNAL_API_KEY: str = "change-me-generate-with-openssl-rand-hex-32"
 
     @property
