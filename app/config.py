@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5174"
     EXTRA_CORS_ORIGINS: str = ""
 
+    # URL del backend de contabanc (dominio Banca) — bank_accounts ya no vive
+    # en esta misma BD desde la separación del dominio Banca (Fase 5)
+    CONTABANC_URL: str = "http://localhost:8004"
+    # Debe ser el mismo valor que INTERNAL_API_KEY en contabanc-backend
+    INTERNAL_API_KEY: str = "change-me-generate-with-openssl-rand-hex-32"
+
     @property
     def cors_origins(self) -> list[str]:
         origins = {
