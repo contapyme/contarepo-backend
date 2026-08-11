@@ -1,11 +1,12 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.fiscal_period import FiscalPeriod
 from app.models.account import Account
 from app.models.contact import Contact
+from app.services import contaope_client
 
 
 async def get_registro_compras(
@@ -51,17 +52,11 @@ async def get_registro_compras(
     entries = (await db.execute(q)).scalars().all()
 
     # Check which entries have a corresponding OpeVoucher (registered via ContaOPE)
+    # ope_vouchers ya no vive en esta BD — se pide por HTTP (contaope-backend#31/#32)
     ope_map: dict[uuid.UUID, uuid.UUID] = {}
     if entries:
         entry_ids = [e.id for e in entries]
-        ope_result = await db.execute(
-            text(
-                "SELECT journal_entry_id, id FROM ope_vouchers "
-                "WHERE journal_entry_id = ANY(:ids)"
-            ),
-            {"ids": entry_ids},
-        )
-        ope_map = {row[0]: row[1] for row in ope_result.fetchall()}
+        ope_map = await contaope_client.get_voucher_ids_by_journal_entries(entry_ids)
 
     rows = []
     for e in entries:
