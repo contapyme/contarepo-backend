@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     CONTABANC_URL: str = "http://localhost:8004"
     # URL del backend de contasist (dominio Usuarios/Seguridad)
     CONTASIST_URL: str = "http://localhost:8006"
+    # URL del backend de ContaOPE — ope_vouchers ya no vive en esta misma
+    # BD desde la separación del dominio (ver contaope-backend#31/#32)
+    CONTAOPE_URL: str = "http://localhost:8003"
     # Debe ser el mismo valor que INTERNAL_API_KEY en contabanc-backend/contasist-backend
     INTERNAL_API_KEY: str = "change-me-generate-with-openssl-rand-hex-32"
 
